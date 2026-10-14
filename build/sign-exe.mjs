@@ -182,6 +182,7 @@ function dumpState(sig) {
       `${JSON.stringify(
         {
           status: sig.status,
+          statusMessage: sig.statusMessage || '',
           subject: sig.subject || '',
           issuer: sig.issuer || '',
           policy: sig.policy || '',

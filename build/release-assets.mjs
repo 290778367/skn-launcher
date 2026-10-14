@@ -59,7 +59,7 @@ const stateFile = path.join(outDir, '.sigcheck.json');
 spawnSync(process.execPath, [path.join(root, 'build', 'sign-exe.mjs'), target, '--report-only', `--state-file=${stateFile}`], {
   stdio: 'inherit',
 });
-let signature = { status: 'Unknown', subject: '', policy: '', timestamped: '' };
+let signature = { status: 'Unknown', statusMessage: '', subject: '', policy: '', timestamped: '' };
 try {
   signature = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 } catch {
@@ -71,6 +71,13 @@ const size = fs.statSync(target).size;
 const sha256 = crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex').toUpperCase();
 const mb = (size / 1024 / 1024).toFixed(1);
 const signed = signature.status === 'Valid';
+// 读不到状态也要让 Release 说明可读：不能留一个空白字段（CI 上偶尔拿不到 Status，与文件本身无关）
+if (!signature.status) console.log(`[整理] 未读到签名状态，原始内容：${JSON.stringify(signature)}`);
+const signatureLabel = signed
+  ? `有效（${signature.subject}${signature.policy ? `，${signature.policy}` : ''}${signature.timestamped === 'yes' ? '，带时间戳' : ''}）`
+  : (signature.status && signature.status !== 'Unknown'
+      ? `${signature.status}${signature.statusMessage ? `（${signature.statusMessage}）` : ''}`
+      : `未检测到有效签名${signature.statusMessage ? `（${signature.statusMessage}）` : ''}`);
 
 const notes = [
   `## SKN 键盘驱动 ${version}`,
@@ -79,7 +86,7 @@ const notes = [
   `  - 安装后程序名与 exe 属性里的「原始文件名」都是中文：\`SKN 键盘驱动.exe\`（下载文件名用 ASCII 是因为 GitHub 会删掉资产名里的非 ASCII 字符）`,
   `- 大小：${mb} MB（${size.toLocaleString('en-US')} 字节）`,
   `- SHA256：\`${sha256}\``,
-  `- 签名：${signed ? `有效（${signature.subject}${signature.policy ? `，${signature.policy}` : ''}${signature.timestamped === 'yes' ? '，带时间戳' : ''}）` : signature.status}`,
+  `- 签名：${signatureLabel}`,
   '',
   '### 安装',
   '',
@@ -95,7 +102,7 @@ const notes = [
   '',
   `- File: ${ASSET_NAME} (single exe; double-click installs, \`--portable\` runs portable).`,
   `- SHA256: \`${sha256}\``,
-  `- Signature: ${signed ? `valid (${signature.subject})` : signature.status}.`,
+  `- Signature: ${signatureLabel}.`,
   '- Install: run it and pick a folder; everything the app writes stays inside that folder.',
   '- Uninstall: run `卸载.exe` inside the install folder.',
   '',
