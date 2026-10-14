@@ -102,7 +102,7 @@ const notes = [
   '',
   `- File: ${ASSET_NAME} (single exe; double-click installs, \`--portable\` runs portable).`,
   `- SHA256: \`${sha256}\``,
-  `- Signature: ${signatureLabel}.`,
+  `- Signature: ${signed ? `valid (${signature.subject})` : 'none (this build is unsigned)'}.`,
   '- Install: run it and pick a folder; everything the app writes stays inside that folder.',
   '- Uninstall: run `卸载.exe` inside the install folder.',
   '',
