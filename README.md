@@ -67,6 +67,7 @@ skn-launcher/
 │  ├─ make-single-exe.mjs     一条命令出交付物：编译 C# → 临时目录构建 → exe → 签名 → 删临时目录
 │  ├─ sign-exe.mjs            签名入口（SignPath / Artifact Signing / PFX / 证书指纹）+ 复核与交付闸门
 │  ├─ release-assets.mjs      发布前整理：改名成 SKN 键盘驱动.exe + 校验值 + Release 说明（中文名交给 node，避开代码页陷阱）
+│  ├─ publish-release.mjs     调 GitHub API 发 Release（自带 action 会把中文资产名压成 SKN.exe，只能用 API 自己传）
 │  ├─ SIGNING.md              SmartScreen 的成因、四条证书路线的资格与花费、降级方案
 │  ├─ signpath/
 │  │  └─ artifact-configuration.xml  SignPath 产物配置：说明要签的是哪个文件
@@ -339,6 +340,7 @@ sign /v /fd SHA256 /sha1 <thumbprint> /tr <时间戳> /td SHA256 <exe>
 | 内容一致性 | 关键文件（`SKN Launcher.exe`、`卸载.exe`、`app.asar`、`version`、`LICENSE`）逐个 SHA256 与构建清单一致，0 处不符 |
 | 负载展开 | 78 条目（76 文件 + 2 目录）/ 340,067,501 字节 / 首次安装 8.6 秒，退出代码 0；临时 `.payload.tar.xz` 已删除 |
 | 发布资产与文件名 | `npm run release-assets` 把构建产物整理成 `release/SKN 键盘驱动.exe` + `release-notes.md`（中英双语，含大小、SHA256、签名状态）；**改完名重新读一遍签名状态**（证明改名不影响 Authenticode 有效性，而不是假设）；PE 元数据 `OriginalFilename` = `SKN 键盘驱动.exe`（csc 的 `/out` 名，此前是 `stub.exe`），内容 SHA256 与交付物逐字节一致 |
+| Release 发布链路 | `npm run publish-release` 直接调 GitHub API 建/更新 Release 并上传资产（实测 `softprops/action-gh-release` 会把 `SKN 键盘驱动.exe` 压成 `SKN.exe`，且 `body_path` 失效时不报错、说明会静默变空）；脚本会校验资产名与说明非空，上传后名字不符直接失败；同名旧资产先删除，重跑不会产生副本 |
 | 写盘范围 | 便携模式首次运行后交付目录只多出 1 项（带 Hidden 的目录）；安装模式交付目录**零新增项**；`%LOCALAPPDATA%\SKN 键盘驱动` 不存在，系统 `%TEMP%` 无残留 |
 | 「来自网络」标记 | 给交付 exe 伪造 `ZoneId=3` 后运行 → 标记被自动清除，`--print-target` 报 `markOfTheWeb=cleared`，再次运行报 `none`；`--unblock` 清除 exe + 目录内 2/2 个文件（含子目录），重复执行无报错 |
 | 构建无残留 | 交付目录本次新增项为空；`build/.scratch` 已删除；外壳与卸载程序由构建脚本自己用 `csc` 编译 |

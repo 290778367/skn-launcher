@@ -17,6 +17,7 @@
     "single": "node build/make-single-exe.mjs",
     "sign": "node build/sign-exe.mjs",
     "release-assets": "node build/release-assets.mjs",
+    "publish-release": "node build/publish-release.mjs",
     "test": "node tools/unit-test.mjs && node tools/motion-test.mjs && node tools/paths-test.mjs",
     "test:unit": "node tools/unit-test.mjs",
     "test:motion": "node tools/motion-test.mjs",
