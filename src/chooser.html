@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>选择要连接的键盘</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --line: #e5e6eb;
+        --text: #1d2129;
+        --muted: #86909c;
+        --accent: #165dff;
+        --bg: #f7f8fa;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 22px 24px 18px;
+        font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: var(--text);
+        background: #fff;
+      }
+      h1 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+      p.hint { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
+      ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+      li + li { margin-top: 8px; }
+      button.device {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 11px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      button.device:hover { border-color: var(--accent); background: #f2f6ff; }
+      button.device:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .name { font-weight: 600; }
+      .meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+      .empty { padding: 18px 0; color: var(--muted); }
+      footer { display: flex; justify-content: flex-end; margin-top: 16px; }
+      button.plain {
+        padding: 7px 16px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg);
+        cursor: pointer;
+        font: inherit;
+        color: var(--text);
+      }
+      button.plain:hover { border-color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <h1>检测到多把键盘</h1>
+    <p class="hint">请选择这次要改键的键盘。选择结果会被记住，下次插上会自动连接。</p>
+    <ul id="list"></ul>
+    <p class="empty" id="empty" hidden>暂时没有可用的键盘，请插好数据线后重试。</p>
+    <footer><button class="plain" id="cancel">取消</button></footer>
+
+    <script>
+      const list = document.getElementById('list');
+      const empty = document.getElementById('empty');
+
+      function render(devices) {
+        list.textContent = '';
+        empty.hidden = devices.length > 0;
+        for (const d of devices) {
+          const li = document.createElement('li');
+          const btn = document.createElement('button');
+          btn.className = 'device';
+          btn.type = 'button';
+
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = d.name || '未知键盘';
+          btn.appendChild(name);
+
+          const meta = document.createElement('span');
+          meta.className = 'meta';
+          const vid = (d.vendorId ?? 0).toString(16).toUpperCase().padStart(4, '0');
+          const pid = (d.productId ?? 0).toString(16).toUpperCase().padStart(4, '0');
+          meta.textContent = `VID:PID ${vid}:${pid}` + (d.usagePages ? ` · 接口 ${d.usagePages}` : '');
+          btn.appendChild(meta);
+
+          btn.addEventListener('click', () => window.sknChooser.pick(d.deviceId));
+          li.appendChild(btn);
+          list.appendChild(li);
+        }
+      }
+
+      document.getElementById('cancel').addEventListener('click', () => window.sknChooser.cancel());
+      window.sknChooser.onDevices(render);
+    </script>
+  </body>
+</html>

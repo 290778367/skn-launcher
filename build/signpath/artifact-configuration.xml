@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath 的「产物配置」：告诉签名服务要签的是哪个文件。
+
+  用法：在 SignPath 的 project 里新建 artifact configuration，选择 Custom，
+  把本文件内容粘进去，或者用「Upload an artifact sample」上传一次
+  dist/SKN-Launcher-setup.exe 打包出来的 ZIP 让服务自动生成后与本文件对照。
+
+  结构说明：
+  - 根元素必须是 <zip-file>，因为 GitHub 的 actions/upload-artifact 默认把产物打成 ZIP。
+  - 里面只有一个 PE 文件，就是交付物本身。
+  - version 是用户自定义参数，由 workflow 从 package.json 传入
+    （artifact 配置里的 parameters 在「Open Source Code Signing」政策下可用）。
+  - 归档里面的其它文件（Electron、卸载程序）不在这里签：
+    它们是安装时才释放到用户机器上的内部文件，签名证书只覆盖用户下载的那一个 exe。
+    想连内部文件一起签，需要两段式流水线（先把负载里的 exe 签好再打包），见 build/SIGNING.md。
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" default-value="0.0.0" />
+  </parameters>
+  <zip-file>
+    <pe-file
+      path="SKN-Launcher-setup.exe"
+      product-name="SKN Launcher"
+      product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -1,0 +1,53 @@
+/* ---------------------------------------------------------------------------
+ * 键位渲染动效覆盖
+ *
+ * 官方键位样式里，键帽家族带这些过渡/动画（逐条取自官方 main.js 内联组件样式
+ * 与其作用域 keyframes，均无 !important）：
+ *
+ *   .keycap-wrapper                            transition: all .1s linear
+ *   .keycap-wrapper > .keycap-key > .keycap    transition: all .1s linear
+ *   .keycap-wrapper .wheel-direction  > div    transition: all .5s linear
+ *   .keycap-wrapper .stick-direction  > div    transition: all .5s linear
+ *   .keycap-wrapper .keycap-left/right > div   transition: all .5s linear
+ *   .wheel-direction-up / -down                animation: .5s ease-in-out
+ *   .stick-direction-up / -down / -left / -right
+ *                                              animation: .5s ease-in-out
+ *   .keycap-left-active / -right-active        animation: .5s ease-in-out
+ *
+ * `transition: all` 把 left / top / width / height / opacity 全部纳入过渡，
+ * 于是布局数据分批到达时，键帽会逐个"缓缓归位"并带轻微淡入。
+ *
+ * 下面用 !important 让键帽直接出现在最终位置（!important 的作者声明优先于
+ * 动画声明，也优先于官方非 important 的 transition），同时不动页面上其它
+ * 动效：加载动画、骨架屏、下拉/弹层、拖拽高亮等一律保持原样。
+ * ------------------------------------------------------------------------- */
+
+/* 1) 键帽本体与其中方向层：去掉过渡，直接落位，不再淡入 */
+.keycap-wrapper,
+.keycap-wrapper .keycap-key,
+.keycap-wrapper .keycap,
+.keycap-wrapper .wheel-direction,
+.keycap-wrapper .wheel-direction > div,
+.keycap-wrapper .stick-direction,
+.keycap-wrapper .stick-direction > div,
+.keycap-wrapper .keycap-left,
+.keycap-wrapper .keycap-left > div,
+.keycap-wrapper .keycap-right,
+.keycap-wrapper .keycap-right > div,
+common-keycap,
+common-keycap * {
+  transition: none !important;
+}
+
+/* 2) 方向/按下指示：保留动画终态（fill-mode 仍生效），只把 .5s 滑动压成瞬时 */
+.wheel-direction-up,
+.wheel-direction-down,
+.stick-direction-up,
+.stick-direction-down,
+.stick-direction-left,
+.stick-direction-right,
+.keycap-left-active,
+.keycap-right-active {
+  animation-duration: 0s !important;
+  transition: none !important;
+}

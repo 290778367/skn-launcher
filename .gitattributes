@@ -1,0 +1,9 @@
+# 统一换行，避免不同平台互相改动整份文件
+* text=auto
+
+# 二进制资源：不要做任何文本转换
+*.exe binary
+*.dll binary
+*.ico binary
+*.png binary
+*.xz binary

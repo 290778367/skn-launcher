@@ -1,0 +1,26 @@
+# 依赖与本地产物：都不进仓库
+node_modules/
+
+# 构建输出：外壳/卸载程序的 exe、打包中间目录、签名状态文件
+build/out/
+build/.scratch/
+build/out/last-build.json
+.sigcheck.json
+
+# 交付物与本地调试产物
+dist/
+dist-v2/
+release/
+
+# 本机构建环境（Electron 缓存、重定向的 APPDATA/TEMP，见 README「构建」）
+.electron-cache/
+.build-env/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志与压缩包（构建产物里的归档不进仓库）
+*.log

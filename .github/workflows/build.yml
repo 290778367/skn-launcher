@@ -1,0 +1,124 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # 打 tag 时需要创建 Release
+  actions: read # SignPath 需要读取本次运行的 workflow artifact
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows build
+    # SignPath 对开源项目的硬性要求：签名请求之前的所有作业都必须跑在 GitHub 托管的 runner 上
+    runs-on: windows-latest
+    env:
+      # 这四个变量 + 一个密钥配齐就会自动签名（见 build/SIGNING.md 的「路线 3」）。
+      # 缺任何一个都不签名，日志与 Release 说明里会明确写出「未签名」。
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Read version from package.json
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "version=$v"
+
+      - name: Unit tests
+        run: npm test
+
+      # 交付物在 CI 里用 ASCII 文件名：Windows runner 的 run 脚本里出现非 ASCII 路径容易被
+      # 代码页搞坏，而用户机器上安装出来的程序名由外壳自己改成中文，跟这里无关。
+      - name: Build single-file exe
+        run: npm run build -- dist/SKN-Launcher-setup.exe
+
+      - name: Record unsigned hash
+        id: hash
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash dist/SKN-Launcher-setup.exe -Algorithm SHA256).Hash
+          "sha256=$h" >> $env:GITHUB_OUTPUT
+          Write-Host "unsigned sha256=$h"
+
+      - name: Upload unsigned artifact
+        id: upload
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-setup
+          path: dist/SKN-Launcher-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # 注意：upload-artifact 默认把文件打成一个 ZIP，所以
+      # build/signpath/artifact-configuration.xml 的根元素是 <zip-file>。
+      - name: Submit to SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+
+      - name: Verify signature
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: node build/sign-exe.mjs signed/SKN-Launcher-setup.exe --require-signed
+
+      - name: Refuse unsigned build
+        if: vars.SKN_REQUIRE_SIGNED == '1' && env.SIGNPATH_API_TOKEN == ''
+        shell: pwsh
+        run: |
+          Write-Error "SKN_REQUIRE_SIGNED=1 but SignPath is not configured; refusing to build an unsigned release."
+          exit 1
+
+      # 中文文件名交给 node 处理：GitHub 会把 run 脚本写盘后由 powershell 按代码页
+      # 读取，脚本里的非 ASCII 字面量会被搞坏；node 以 UTF-8 读源码，没有这个问题。
+      # 这一步在签名之后改名，所以签名服务全程只见到 ASCII 文件名。
+      - name: Collect deliverables and release notes
+        run: npm run release-assets
+
+      - name: Upload deliverable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKN-Launcher-setup
+          path: release/SKN 键盘驱动.exe
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/SKN 键盘驱动.exe
+          body_path: release-notes.md
+          fail_on_unmatched_files: true
