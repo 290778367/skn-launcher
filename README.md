@@ -10,7 +10,7 @@
 
 ## 下载
 
-从本仓库的 **Releases** 下载 `SKN 键盘驱动.exe`（单文件，约 95 MB，SHA256 与签名状态都写在 Release 说明里）。
+从本仓库的 **Releases** 下载 `SKN-Launcher-Setup-<版本>.exe`（单文件，约 95 MB，SHA256 与签名状态都写在 Release 说明里）。文件名是 ASCII，原因见下面「关于文件名」；安装出来的程序名与 exe 属性里的名字仍然是中文 `SKN 键盘驱动.exe`。
 
 - **未签名版本**：浏览器下载后首次运行会出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可；程序会清掉自己的「来自网络」标记，同一份文件不会再问第二次。用 U 盘或局域网共享拷贝则完全不提示。
 - **签名版本**：项目通过 [SignPath Foundation](https://signpath.org/) 的免费开源签名后，Release 里的文件就是已签名的，不再出现该提示。当前状态以 Release 说明里的 `signature:` 一行和构建日志为准。
@@ -118,7 +118,11 @@ npm run package                 # 产物默认写到 ..\dist，可用 $env:SKN_O
 
 CI（[`.github/workflows/build.yml`](.github/workflows/build.yml)）在 `windows-latest` 上跑同一套命令：`npm ci` → `npm test` → 构建 → 配了 SignPath 就签名并复核 → 整理发布资产 → 打 `v*` 标签时发 Release。
 
-**关于文件名**：仓库内部与签名服务全程只用 ASCII 名 `SKN-Launcher-setup.exe`（GitHub 会把 `run` 脚本写盘后由 `powershell` 按代码页读取，脚本里的非 ASCII 字面量会被搞坏），面向用户的文件在**签名之后**由 node 改名成 `SKN 键盘驱动.exe`（`npm run release-assets`，见 [`build/release-assets.mjs`](build/release-assets.mjs)）。Authenticode 是按文件内容校验的，改名不会让签名失效——脚本会在改名后重新读一遍签名状态来证明，而不是假设。另外外壳本身就以中文名编译（`csc /out` 的文件名会写进 PE 的 `OriginalFilename`），所以 exe 属性页里看到的「原始文件名」也是 `SKN 键盘驱动.exe`。
+**关于文件名**：签名服务与 CI 内部全程只用 ASCII 名 `SKN-Launcher-setup.exe`（GitHub 会把 `run` 脚本写盘后由 `powershell` 按代码页读取，脚本里的非 ASCII 字面量会被搞坏），面向 Release 的资产名在**签名之后**由 [`build/release-assets.mjs`](build/release-assets.mjs)（node，UTF-8 安全）定为 `SKN-Launcher-Setup-<版本>.exe`。
+
+**为什么发布资产名不能用中文（实测结论）**：GitHub 服务端会把 Release 资产名里的非 ASCII 字符直接删掉——`SKN 键盘驱动.exe` 上传后变成 `SKN.exe`，`测试-中文名.exe` 变成 `-.exe`，`SKN-中文-mixed-1.0.0.exe` 变成 `SKN-.-mixed-1.0.0.exe`（三次实验，softprops/action-gh-release 与直连 API 的结果完全一致）。所以中文只能留在程序内部：安装后的程序名与 PE 元数据里的「原始文件名」「产品名称」都是 `SKN 键盘驱动.exe`。
+
+Authenticode 按文件内容校验，签名后改名不会让签名失效——脚本会在改名后重新读一遍签名状态来证明，而不是假设。
 
 ## 写入范围
 
@@ -339,7 +343,8 @@ sign /v /fd SHA256 /sha1 <thumbprint> /tr <时间戳> /td SHA256 <exe>
 | 卸载的安全性 | 无安装标记的目录 → 拒绝（退出码 20，目录原样保留）；本目录里的程序正在运行时 → 拒绝（退出码 21，文件全在）；盘符根目录与系统目录同样拒绝 |
 | 内容一致性 | 关键文件（`SKN Launcher.exe`、`卸载.exe`、`app.asar`、`version`、`LICENSE`）逐个 SHA256 与构建清单一致，0 处不符 |
 | 负载展开 | 78 条目（76 文件 + 2 目录）/ 340,067,501 字节 / 首次安装 8.6 秒，退出代码 0；临时 `.payload.tar.xz` 已删除 |
-| 发布资产与文件名 | `npm run release-assets` 把构建产物整理成 `release/SKN 键盘驱动.exe` + `release-notes.md`（中英双语，含大小、SHA256、签名状态）；**改完名重新读一遍签名状态**（证明改名不影响 Authenticode 有效性，而不是假设）；PE 元数据 `OriginalFilename` = `SKN 键盘驱动.exe`（csc 的 `/out` 名，此前是 `stub.exe`），内容 SHA256 与交付物逐字节一致 |
+| 发布资产与文件名 | `npm run release-assets` 把构建产物整理成 `release/SKN-Launcher-Setup-<版本>.exe` + `release-notes.md`（中英双语，含大小、SHA256、签名状态）；**改完名重新读一遍签名状态**（证明改名不影响 Authenticode 有效性，而不是假设）；PE 元数据 `OriginalFilename` = `SKN 键盘驱动.exe`（csc 的 `/out` 名，此前是 `stub.exe`），内容 SHA256 与交付物逐字节一致 |
+| Release 资产名 | **实测 GitHub 会删掉资产名里的非 ASCII 字符**（`SKN 键盘驱动.exe`→`SKN.exe`、`测试-中文名.exe`→`-.exe`），三次实验在 action 与直连 API 两条路径上结果一致；因此发布名改用 ASCII 并带版本号，脚本上传后会核对返回的资产名，被改写就直接失败 |
 | Release 发布链路 | `npm run publish-release` 直接调 GitHub API 建/更新 Release 并上传资产（实测 `softprops/action-gh-release` 会把 `SKN 键盘驱动.exe` 压成 `SKN.exe`，且 `body_path` 失效时不报错、说明会静默变空）；脚本会校验资产名与说明非空，上传后名字不符直接失败；同名旧资产先删除，重跑不会产生副本 |
 | 写盘范围 | 便携模式首次运行后交付目录只多出 1 项（带 Hidden 的目录）；安装模式交付目录**零新增项**；`%LOCALAPPDATA%\SKN 键盘驱动` 不存在，系统 `%TEMP%` 无残留 |
 | 「来自网络」标记 | 给交付 exe 伪造 `ZoneId=3` 后运行 → 标记被自动清除，`--print-target` 报 `markOfTheWeb=cleared`，再次运行报 `none`；`--unblock` 清除 exe + 目录内 2/2 个文件（含子目录），重复执行无报错 |

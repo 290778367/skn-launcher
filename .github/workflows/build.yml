@@ -112,7 +112,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SKN-Launcher-setup
-          path: release/SKN 键盘驱动.exe
+          path: release/*.exe
           if-no-files-found: error
 
       - name: Publish release

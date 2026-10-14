@@ -1,7 +1,13 @@
 /**
- * 把构建产物整理成「用户下载的那一个文件」：中文文件名 + 校验值 + Release 说明。
+ * 把构建产物整理成「用户下载的那一个文件」：ASCII 资产名 + 校验值 + Release 说明。
  *
- * 为什么要在签名之后单独做一步，而且用 node 而不是 PowerShell：
+ * 为什么发布资产名用 ASCII（实测结论，不是猜的）：
+ *   GitHub 服务端会把 Release 资产名里的非 ASCII 字符**直接删掉**——
+ *   `SKN 键盘驱动.exe` 上传后变成 `SKN.exe`，`测试-中文名.exe` 变成 `-.exe`。
+ *   所以中文名根本传不上去；程序本身的名字不受影响：安装后仍叫 `SKN 键盘驱动.exe`，
+ *   PE 元数据里的产品名与「原始文件名」也是中文（外壳就以中文名编译）。
+ *
+ * 为什么在签名之后单独做一步、而且用 node 而不是 PowerShell：
  *   - 签名服务与 CI 内部一律使用 ASCII 文件名 SKN-Launcher-setup.exe，避免
  *     Windows runner 上的代码页问题（GitHub 把 run 脚本写盘后由 powershell 读取，
  *     脚本里的非 ASCII 字面量会被搞坏）。本文件由 node 以 UTF-8 读取，没有这个风险。
@@ -18,8 +24,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-/** 面向用户的文件名：与外壳安装出来的程序名、PE 的 OriginalFilename 一致 */
-const ASSET_NAME = 'SKN 键盘驱动.exe';
 
 const args = process.argv.slice(2);
 const option = (name) => {
@@ -42,6 +46,8 @@ if (!fs.existsSync(from)) {
 }
 
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+/** 面向 Release 的资产名：必须 ASCII（GitHub 会删掉非 ASCII 字符），带版本号便于区分 */
+const ASSET_NAME = `SKN-Launcher-Setup-${version}.exe`;
 fs.mkdirSync(outDir, { recursive: true });
 
 const target = path.join(outDir, ASSET_NAME);
@@ -70,6 +76,7 @@ const notes = [
   `## SKN 键盘驱动 ${version}`,
   '',
   `- 文件：${ASSET_NAME}（单文件，双击是安装版；命令行加 \`--portable\` 是便携版）`,
+  `  - 安装后程序名与 exe 属性里的「原始文件名」都是中文：\`SKN 键盘驱动.exe\`（下载文件名用 ASCII 是因为 GitHub 会删掉资产名里的非 ASCII 字符）`,
   `- 大小：${mb} MB（${size.toLocaleString('en-US')} 字节）`,
   `- SHA256：\`${sha256}\``,
   `- 签名：${signed ? `有效（${signature.subject}${signature.policy ? `，${signature.policy}` : ''}${signature.timestamped === 'yes' ? '，带时间戳' : ''}）` : signature.status}`,

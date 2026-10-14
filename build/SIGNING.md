@@ -90,7 +90,7 @@
 
 **本仓库已经写好的部分**：workflow 的全部步骤、产物配置、签名后的强制复核（`node build/sign-exe.mjs <文件> --require-signed`：跑 `signtool verify /pa /all`、检查时间戳、识别 EV/OV）。剩下要做的只有「推仓库 + 申请 + 填六个值」。
 
-**文件名是怎么安排的（别改错）**：签名服务从始至终只见到 ASCII 名 `SKN-Launcher-setup.exe`（产物配置里 `path` 就是它），因为 GitHub 在 Windows runner 上把 `run` 脚本写盘后由 `powershell` 按代码页读取，脚本里的非 ASCII 字面量会被搞坏。面向用户的文件在**签名之后**由 `build/release-assets.mjs`（node，UTF-8 安全）改名成 `SKN 键盘驱动.exe`，并顺带生成 Release 说明。Authenticode 按文件内容校验，改名不会让签名失效——脚本会在改名后重新读一遍签名状态来证明这点。外壳本身也以中文名编译（`csc /out` 的文件名会进 PE 的 `OriginalFilename`），所以属性页里「原始文件名」与下载文件名一致。
+**文件名是怎么安排的（别改错）**：签名服务从始至终只见到 ASCII 名 `SKN-Launcher-setup.exe`（产物配置里 `path` 就是它），因为 GitHub 在 Windows runner 上把 `run` 脚本写盘后由 `powershell` 按代码页读取，脚本里的非 ASCII 字面量会被搞坏。面向 Release 的资产名在**签名之后**由 `build/release-assets.mjs`（node，UTF-8 安全）定为 `SKN-Launcher-Setup-<版本>.exe`，并顺带生成 Release 说明。**发布资产名不能用中文**：实测 GitHub 服务端会删掉资产名里的非 ASCII 字符（`SKN 键盘驱动.exe` → `SKN.exe`），所以中文只保留在程序内部——安装后的程序名与 PE 元数据里的「原始文件名」都是 `SKN 键盘驱动.exe`。Authenticode 按文件内容校验，签名后改名不会让签名失效——脚本会在改名后重新读一遍签名状态来证明这点。
 
 **一个必须知道的边界（智能应用控制）**：程序运行时会把 Electron 解压到安装目录，而 **Electron 官方发布的二进制本身就没有签名**（实测 `electron.exe` 状态 `NotSigned`），所以外壳即使签了名，安装目录里的 `SKN 键盘驱动.exe` 仍然是未签名的。微软文档的口径是：强制模式下「应用和**二进制文件**只有被应用智能服务识别、或用信任根列表里的 CA 签过名才能运行」，因此**开了 SAC 强制模式的机器仍可能拦下内部那个 Electron 进程**。要彻底覆盖，需要两段式流水线：先把负载里的 exe 交给 SignPath 签好，再打包、再签外层（SignPath 的产物配置支持 ZIP 内嵌套 PE 文件）。这属于后续可选工作，不影响 SmartScreen 这条主线。
 

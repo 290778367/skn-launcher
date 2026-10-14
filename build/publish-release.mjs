@@ -1,18 +1,17 @@
 /**
- * 发布 Release：打 tag 时由 CI 调用。
+ * 发布 Release：打 tag 时由 CI 调用（自己调 GitHub API，不用第三方 action）。
  *
- * 为什么不直接用 softprops/action-gh-release（实测踩到的两个坑）：
- *   1. 它会把非 ASCII 的资产名「清理」掉：`SKN 键盘驱动.exe` 上传后变成 `SKN.exe`，
- *      而用户在下载列表里看到的就是这个名字。
- *   2. 它的 `body_path` 找不到文件时不报错，Release 说明会静默变成空。
- * 自己调 GitHub API，名字、正文、重复资产的处理都是确定的，出问题会直接失败。
+ * 为什么不用 softprops/action-gh-release（实测踩到的两个坑）：
+ *   1. 它读取 body_path 失败时不报错，Release 说明会静默变成空；
+ *   2. 资产名交给它上传时也可能被 GitHub 服务端清洗（非 ASCII 字符被删掉）。
+ * 自己调 API 才能保证「说明不为空」「资产名与预期一致」这两件事失败即报错。
  *
  * 用法（CI 里不需要参数，读环境变量即可）：
  *   node build/publish-release.mjs
  *   node build/publish-release.mjs --tag v1.1.1 --dry-run
  *
  * 环境变量：GITHUB_TOKEN、GITHUB_REPOSITORY(owner/repo)；tag 模式下用 GITHUB_REF_NAME/GITHUB_REF_TYPE
- * 可选参数：--tag <tag>、--asset <path>、--notes <path>、--prerelease、--dry-run
+ * 可选参数：--tag <tag>、--assets <目录>、--notes <文件>、--prerelease、--dry-run
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,8 +24,8 @@ const option = (name) => {
   return index >= 0 ? args[index + 1] : null;
 };
 
-const ASSET = path.resolve(root, option('--asset') || path.join('release', 'SKN 键盘驱动.exe'));
-const NOTES = path.resolve(root, option('--notes') || path.join('release', 'release-notes.md'));
+const assetsDir = path.resolve(option('--assets') || path.join(root, 'release'));
+const notesFile = path.resolve(option('--notes') || path.join(assetsDir, 'release-notes.md'));
 const dryRun = has('--dry-run');
 const prerelease = has('--prerelease');
 
@@ -41,17 +40,28 @@ if (!/^v\d/.test(tag)) {
   console.error(`[发布] 标签名不像版本号，拒绝发布：${tag}`);
   process.exit(1);
 }
-for (const file of [ASSET, NOTES]) {
-  if (!fs.existsSync(file)) {
-    console.error(`[发布] 缺少文件：${path.relative(root, file)}`);
+if (!fs.existsSync(notesFile)) {
+  console.error(`[发布] 缺少说明文件：${path.relative(root, notesFile)}`);
+  process.exit(1);
+}
+const notes = fs.readFileSync(notesFile, 'utf8');
+if (notes.trim().length < 50) {
+  console.error('[发布] 说明文件太短，拒绝发布一个没有说明的 Release。');
+  process.exit(1);
+}
+const files = fs.existsSync(assetsDir)
+  ? fs.readdirSync(assetsDir).filter((file) => file.toLowerCase().endsWith('.exe')).sort()
+  : [];
+if (files.length === 0) {
+  console.error(`[发布] ${path.relative(root, assetsDir)} 里没有 .exe 资产。`);
+  process.exit(1);
+}
+// 资产名必须是 ASCII：GitHub 会把非 ASCII 字符从名字里删掉（实测 `SKN 键盘驱动.exe` -> `SKN.exe`）
+for (const file of files) {
+  if (!/^[\x20-\x7e]+$/.test(file)) {
+    console.error(`[发布] 资产名含非 ASCII 字符，GitHub 会改写它：${file}`);
     process.exit(1);
   }
-}
-const assetName = path.basename(ASSET);
-const notes = fs.readFileSync(NOTES, 'utf8');
-if (notes.trim().length < 20) {
-  console.error('[发布] 说明文件是空的，拒绝发布一个没有说明的 Release。');
-  process.exit(1);
 }
 
 const repository = option('--repo') || process.env.GITHUB_REPOSITORY;
@@ -69,7 +79,7 @@ const headers = {
 };
 
 console.log(`[发布] 标签 ${tag}`);
-console.log(`[发布] 资产 ${assetName}（${(fs.statSync(ASSET).size / 1024 / 1024).toFixed(1)} MB）`);
+for (const file of files) console.log(`[发布] 资产 ${file}（${(fs.statSync(path.join(assetsDir, file)).size / 1024 / 1024).toFixed(1)} MB）`);
 console.log(`[发布] 说明 ${notes.trim().split('\n').length} 行`);
 
 if (dryRun) {
@@ -92,7 +102,7 @@ async function call(url, init = {}) {
   return body;
 }
 
-// 1. 已有 Release 就更新，没有就新建（tag 是刚推上来的，通常需要新建）
+// 1. 已有 Release 就更新，没有就新建
 let release = null;
 try {
   release = await call(`${api}/releases/tags/${encodeURIComponent(tag)}`);
@@ -112,26 +122,30 @@ try {
   console.log(`[发布] 新建 Release #${release.id}`);
 }
 
-// 2. 同名资产先删掉，避免重跑时出现 SKN 键盘驱动.exe 与 SKN 键盘驱动.1.exe 这种重名副本
-const assets = await call(`${api}/releases/${release.id}/assets`);
-for (const existing of assets) {
-  if (existing.name === assetName) {
-    await call(`${api}/releases/assets/${existing.id}`, { method: 'DELETE' });
-    console.log(`[发布] 删除同名旧资产 ${existing.name}（#${existing.id}）`);
+// 2. 同名旧资产先删掉，重跑不会出现 `xxx.1.exe` 这种副本
+const existing = await call(`${api}/releases/${release.id}/assets`);
+for (const asset of existing) {
+  if (files.includes(asset.name)) {
+    await call(`${api}/releases/assets/${asset.id}`, { method: 'DELETE' });
+    console.log(`[发布] 删除同名旧资产 ${asset.name}`);
   }
 }
 
-// 3. 上传。整块读进来是为了给出确定的 Content-Length（流式上传会走 chunked，上传接口不吃）
-const uploaded = await call(`https://uploads.github.com/repos/${repository}/releases/${release.id}/assets?name=${encodeURIComponent(assetName)}`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(fs.statSync(ASSET).size) },
-  body: fs.readFileSync(ASSET),
-});
-
-console.log(`[发布] 资产名 ${uploaded.name}`);
-console.log(`[发布] 下载地址 ${uploaded.browser_download_url}`);
-console.log(`[发布] Release ${release.html_url}`);
-if (uploaded.name !== assetName) {
-  console.error(`[发布] 资产名被改写了：期望 ${assetName}，实际 ${uploaded.name}`);
-  process.exit(1);
+// 3. 上传。整块读进来是为了给出确定的 Content-Length（流式上传走 chunked，上传接口不吃）
+for (const file of files) {
+  const full = path.join(assetsDir, file);
+  const uploaded = await call(
+    `https://uploads.github.com/repos/${repository}/releases/${release.id}/assets?name=${encodeURIComponent(file)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(fs.statSync(full).size) },
+      body: fs.readFileSync(full),
+    },
+  );
+  if (uploaded.name !== file) {
+    console.error(`[发布] 资产名被 GitHub 改写：期望 ${file}，实际 ${uploaded.name}`);
+    process.exit(1);
+  }
+  console.log(`[发布] 已上传 ${uploaded.name} -> ${uploaded.browser_download_url}`);
 }
+console.log(`[发布] Release ${release.html_url}`);
