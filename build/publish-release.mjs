@@ -148,4 +148,14 @@ for (const file of files) {
   }
   console.log(`[发布] 已上传 ${uploaded.name} -> ${uploaded.browser_download_url}`);
 }
+
+// 4. 清掉本次不再产出的旧 .exe 资产：历史失败运行可能留下被 GitHub 改写过名字的残留
+//    （例如旧的中文名被清洗成 `SKN.exe`，它不叫现名所以不会被上面的同名删除覆盖）
+const after = await call(`${api}/releases/${release.id}/assets`);
+for (const asset of after) {
+  if (asset.name.toLowerCase().endsWith('.exe') && !files.includes(asset.name)) {
+    await call(`${api}/releases/assets/${asset.id}`, { method: 'DELETE' });
+    console.log(`[发布] 删除陈旧资产 ${asset.name}`);
+  }
+}
 console.log(`[发布] Release ${release.html_url}`);
